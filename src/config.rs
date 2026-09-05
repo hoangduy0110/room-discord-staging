@@ -550,6 +550,7 @@ mod tests {
         set_valid_base_env();
         std::env::set_var("CLIENT_OS", "macOS");
         std::env::set_var("CLIENT_OS_ARCH", "aarch64");
+        std::env::set_var("CLIENT_APP_ARCH", "aarch64");
         std::env::set_var(
             "BROWSER_USER_AGENT",
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5)",

@@ -55,8 +55,6 @@ pub enum MainRequest {
 pub enum GatewayError {
     #[error("heartbeat timeout")]
     HeartbeatTimeout,
-    #[error("invalid session")]
-    InvalidSession,
     #[error("authentication failed")]
     AuthFailed,
     #[error("network error: {0}")]
