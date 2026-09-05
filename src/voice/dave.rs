@@ -44,6 +44,7 @@ impl DaveState {
         }
     }
 
+    #[cfg(test)]
     pub fn status(&self) -> DaveStatus {
         self.status
     }

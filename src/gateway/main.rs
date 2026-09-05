@@ -101,9 +101,11 @@ pub async fn run(
         let can_resume = session_id.is_some() && seq.is_some();
         info!(node=%label, resume=can_resume, "main gateway connecting");
 
-        let mut ws_config = WebSocketConfig::default();
-        ws_config.max_message_size = Some(GATEWAY_MAX_MESSAGE_BYTES);
-        ws_config.max_frame_size = Some(GATEWAY_MAX_FRAME_BYTES);
+        let ws_config = WebSocketConfig {
+            max_message_size: Some(GATEWAY_MAX_MESSAGE_BYTES),
+            max_frame_size: Some(GATEWAY_MAX_FRAME_BYTES),
+            ..Default::default()
+        };
 
         let connected_at = Instant::now();
         let connect_result = connect_async_with_config(&url, Some(ws_config), false).await;
