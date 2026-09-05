@@ -5,8 +5,40 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
-  rust:
+  format:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.rustfmt.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - id: rustfmt
+        name: Format source
+        shell: bash
+        run: |
+          cargo fmt
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -- '*.rs'
+            git commit -m "style: rustfmt"
+            git push origin HEAD:main
+          fi
+
+  validate:
+    needs: format
+    if: needs.format.outputs.changed == 'false'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
