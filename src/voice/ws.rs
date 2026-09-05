@@ -198,7 +198,7 @@ impl VoiceConnection {
                     }
                     missed_acks += 1;
                     heartbeat_sleep.as_mut().reset(
-                        Instant::now() + heartbeat_delay(heartbeat_ms, self.params.heartbeat_jitter_percent, self.params.jitter_stddev_percent),
+                        (Instant::now() + heartbeat_delay(heartbeat_ms, self.params.heartbeat_jitter_percent, self.params.jitter_stddev_percent)).into(),
                     );
                 }
                 msg = stream.next() => {
