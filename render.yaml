@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: room-discord-rs
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: DISCORD_TOKENS
+        sync: false
+      - key: TARGET_GUILD_ID
+        sync: false
+      - key: TARGET_CHANNEL_ID
+        sync: false
+      - key: SELF_MUTE
+        value: "true"
+      - key: SELF_DEAF
+        value: "true"
+      - key: STARTUP_GRACE_SECONDS
+        value: "90"
+      - key: HEALTH_FAIL_AFTER_SECONDS
+        value: "180"
+      - key: MEMORY_WARN_MB
+        value: "300"
+      - key: MEMORY_RESTART_MB
+        value: "420"
