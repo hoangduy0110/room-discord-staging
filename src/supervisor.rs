@@ -51,7 +51,9 @@ pub async fn run_account(
     let mut backoff = INITIAL_SUPERVISOR_BACKOFF;
 
     loop {
-        if *shutdown.borrow() { break; }
+        if *shutdown.borrow() {
+            break;
+        }
 
         with_node(&registry, &label, |n| {
             n.generation += 1;
@@ -67,13 +69,17 @@ pub async fn run_account(
             n.dave_error = None;
             n.supervisor_error = None;
             n.voice_worker_id = 0;
-        }).await;
+        })
+        .await;
 
         let generation_started = Instant::now();
-        let outcome = run_generation(&account, config.clone(), registry.clone(), shutdown.clone()).await;
+        let outcome =
+            run_generation(&account, config.clone(), registry.clone(), shutdown.clone()).await;
         let generation_uptime = generation_started.elapsed();
 
-        if *shutdown.borrow() { break; }
+        if *shutdown.borrow() {
+            break;
+        }
 
         match outcome {
             GenerationOutcome::Ok => break,
@@ -86,7 +92,8 @@ pub async fn run_account(
                     n.dave_ready = false;
                     n.supervisor_alive = false;
                     n.supervisor_error = Some(format!("fatal: {reason}"));
-                }).await;
+                })
+                .await;
                 warn!(node=%label, %reason, "account supervisor stopped due to fatal");
                 break;
             }
@@ -106,11 +113,14 @@ pub async fn run_account(
                     if !error.is_empty() {
                         n.supervisor_error = Some(error.clone());
                     }
-                }).await;
+                })
+                .await;
 
                 let sleep = jitter(backoff, Duration::from_secs(3));
                 warn!(node=%label, ?sleep, uptime=?generation_uptime, error=%error, "generation ended; restarting");
-                if wait_or_shutdown(&mut shutdown, sleep).await { break; }
+                if wait_or_shutdown(&mut shutdown, sleep).await {
+                    break;
+                }
                 backoff = Duration::from_secs_f64(
                     (backoff.as_secs_f64() * 1.7).min(config.supervisor_backoff_max.as_secs_f64()),
                 );
@@ -144,7 +154,13 @@ async fn run_generation(
     mut shutdown: watch::Receiver<bool>,
 ) -> GenerationOutcome {
     let label = account.label.clone();
-    let current_generation = match registry.read().await.nodes.get(&label).map(|n| n.generation) {
+    let current_generation = match registry
+        .read()
+        .await
+        .nodes
+        .get(&label)
+        .map(|n| n.generation)
+    {
         Some(g) => g,
         None => return GenerationOutcome::Fatal("missing node state".into()),
     };
@@ -494,7 +510,8 @@ async fn run_generation(
                         n.voice_heartbeat_ok = false;
                         n.dave_ready = false;
                         n.voice_error = Some("voice_transport_connecting".into());
-                    }).await;
+                    })
+                    .await;
 
                     let voice_params = VoiceParams {
                         endpoint,
@@ -544,10 +561,7 @@ fn spawn_voice_worker(
     })
 }
 
-async fn run_voice_worker(
-    mut voice: VoiceConnection,
-    label: &str,
-) -> VoiceWorkerExit {
+async fn run_voice_worker(mut voice: VoiceConnection, label: &str) -> VoiceWorkerExit {
     let mut backoff = INITIAL_VOICE_BACKOFF;
     let mut quick_failures = 0u32;
 
@@ -584,12 +598,14 @@ async fn run_voice_worker(
                 return VoiceWorkerExit::Fatal(reason);
             }
             Err(e) => {
-                voice.update_node(|n| {
-                    n.voice_connected = false;
-                    n.voice_heartbeat_ok = false;
-                    n.dave_ready = false;
-                    n.voice_error = Some(format!("voice_transport:{e}"));
-                }).await;
+                voice
+                    .update_node(|n| {
+                        n.voice_connected = false;
+                        n.voice_heartbeat_ok = false;
+                        n.dave_ready = false;
+                        n.voice_error = Some(format!("voice_transport:{e}"));
+                    })
+                    .await;
 
                 quick_failures = quick_failures.saturating_add(1);
                 if quick_failures >= MAX_QUICK_VOICE_FAILURES {
@@ -638,7 +654,9 @@ async fn send_join(tx: &mpsc::Sender<MainRequest>, config: &Config) -> anyhow::R
         channel_id: config.channel_id.clone(),
         mute: config.self_mute,
         deaf: config.self_deaf,
-    }).await.map_err(|_| anyhow::anyhow!("main gateway request channel closed"))
+    })
+    .await
+    .map_err(|_| anyhow::anyhow!("main gateway request channel closed"))
 }
 
 async fn set_voice_owner(registry: &SharedRegistry, label: &str, worker_id: u64) {
@@ -679,9 +697,8 @@ fn next_voice_backoff(current: Duration) -> Duration {
 }
 
 fn jitter(base: Duration, max_extra: Duration) -> Duration {
-    let extra = rand::thread_rng().gen_range(
-        0.0..=(base.as_secs_f64() * 0.15).min(max_extra.as_secs_f64()),
-    );
+    let extra = rand::thread_rng()
+        .gen_range(0.0..=(base.as_secs_f64() * 0.15).min(max_extra.as_secs_f64()));
     Duration::from_secs_f64(base.as_secs_f64() + extra)
 }
 
@@ -758,7 +775,9 @@ mod tests {
 
     #[test]
     fn classify_voice_fresh_session_as_recoverable() {
-        let exit = VoiceWorkerExit::NeedFreshSession { reason: "test".to_string() };
+        let exit = VoiceWorkerExit::NeedFreshSession {
+            reason: "test".to_string(),
+        };
         let outcome = classify_voice_exit(exit);
         assert!(matches!(outcome, GenerationOutcome::Recoverable(_)));
     }

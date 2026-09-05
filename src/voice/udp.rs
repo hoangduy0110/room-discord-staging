@@ -21,9 +21,14 @@ pub async fn discover(ssrc: u32, ip: &str, port: u16) -> anyhow::Result<Discover
 
     let mut buf = [0u8; DISCOVERY_LEN];
     let n = tokio::time::timeout(Duration::from_secs(5), socket.recv(&mut buf)).await??;
-    if n < DISCOVERY_LEN { anyhow::bail!("short UDP discovery reply: {n}"); }
+    if n < DISCOVERY_LEN {
+        anyhow::bail!("short UDP discovery reply: {n}");
+    }
     let addr_end = buf[8..72].iter().position(|b| *b == 0).unwrap_or(64);
     let external_ip = std::str::from_utf8(&buf[8..8 + addr_end])?.to_string();
     let external_port = u16::from_be_bytes([buf[72], buf[73]]);
-    Ok(DiscoveryResult { external_ip, external_port })
+    Ok(DiscoveryResult {
+        external_ip,
+        external_port,
+    })
 }

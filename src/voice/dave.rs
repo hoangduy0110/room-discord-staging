@@ -63,7 +63,12 @@ impl DaveState {
                 let _ = session.reset();
                 session.set_passthrough_mode(true, Some(10));
             } else {
-                match DaveSession::new(NonZeroU16::new(1).unwrap(), self.user_id, self.channel_id, None) {
+                match DaveSession::new(
+                    NonZeroU16::new(1).unwrap(),
+                    self.user_id,
+                    self.channel_id,
+                    None,
+                ) {
                     Ok(mut session) => {
                         session.set_passthrough_mode(true, Some(10));
                         self.session = Some(session);
@@ -87,7 +92,9 @@ impl DaveState {
             }
         };
         let result = match self.session.as_mut() {
-            Some(session) => session.reinit(version, self.user_id, self.channel_id, None).map(|_| ()),
+            Some(session) => session
+                .reinit(version, self.user_id, self.channel_id, None)
+                .map(|_| ()),
             None => match DaveSession::new(version, self.user_id, self.channel_id, None) {
                 Ok(s) => {
                     self.session = Some(s);
@@ -107,7 +114,10 @@ impl DaveState {
         match session.create_key_package() {
             Ok(pkg) => {
                 self.status = DaveStatus::Ready;
-                vec![DaveOut::Binary { op: OP_MLS_KEY_PACKAGE, data: pkg }]
+                vec![DaveOut::Binary {
+                    op: OP_MLS_KEY_PACKAGE,
+                    data: pkg,
+                }]
             }
             Err(e) => {
                 tracing::warn!(target: "voice.dave", "create_key_package failed: {e}");
@@ -120,8 +130,12 @@ impl DaveState {
     pub fn on_text_op(&mut self, op: u8, d: &Value) -> Vec<DaveOut> {
         match op {
             OP_DAVE_PREPARE_TRANSITION => {
-                let transition_id = d.get("transition_id").and_then(|v| v.as_u64()).unwrap_or(0) as u16;
-                let version = d.get("protocol_version").and_then(|v| v.as_u64()).unwrap_or(0) as u16;
+                let transition_id =
+                    d.get("transition_id").and_then(|v| v.as_u64()).unwrap_or(0) as u16;
+                let version = d
+                    .get("protocol_version")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as u16;
                 self.pending_transitions.insert(transition_id, version);
                 if transition_id == 0 {
                     self.execute_transition(0)
@@ -138,12 +152,16 @@ impl DaveState {
                 }
             }
             OP_DAVE_EXECUTE_TRANSITION => {
-                let transition_id = d.get("transition_id").and_then(|v| v.as_u64()).unwrap_or(0) as u16;
+                let transition_id =
+                    d.get("transition_id").and_then(|v| v.as_u64()).unwrap_or(0) as u16;
                 self.execute_transition(transition_id)
             }
             OP_DAVE_PREPARE_EPOCH => {
                 let epoch = d.get("epoch").and_then(|v| v.as_u64()).unwrap_or(0);
-                let version = d.get("protocol_version").and_then(|v| v.as_u64()).unwrap_or(0) as u16;
+                let version = d
+                    .get("protocol_version")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as u16;
                 if epoch == 1 {
                     self.protocol_version = version;
                     self.reinit_session()
@@ -195,7 +213,9 @@ impl DaveState {
                 Vec::new()
             }
             OP_MLS_PROPOSALS => {
-                if payload.is_empty() { return Vec::new(); }
+                if payload.is_empty() {
+                    return Vec::new();
+                }
                 let optype = if payload[0] == 0 {
                     davey::ProposalsOperationType::APPEND
                 } else {
@@ -205,8 +225,13 @@ impl DaveState {
                 match session.process_proposals(optype, &payload[1..], None) {
                     Ok(Some(cw)) => {
                         let mut data = cw.commit;
-                        if let Some(welcome) = cw.welcome { data.extend_from_slice(&welcome); }
-                        vec![DaveOut::Binary { op: OP_MLS_COMMIT_WELCOME, data }]
+                        if let Some(welcome) = cw.welcome {
+                            data.extend_from_slice(&welcome);
+                        }
+                        vec![DaveOut::Binary {
+                            op: OP_MLS_COMMIT_WELCOME,
+                            data,
+                        }]
                     }
                     Ok(None) => Vec::new(),
                     Err(e) => {
@@ -217,13 +242,16 @@ impl DaveState {
                 }
             }
             OP_MLS_ANNOUNCE_COMMIT_TRANSITION => {
-                if payload.len() < 2 { return Vec::new(); }
+                if payload.len() < 2 {
+                    return Vec::new();
+                }
                 let transition_id = u16::from_be_bytes([payload[0], payload[1]]);
                 let session = self.session.as_mut().unwrap();
                 match session.process_commit(&payload[2..]) {
                     Ok(()) => {
                         if transition_id != 0 {
-                            self.pending_transitions.insert(transition_id, self.protocol_version);
+                            self.pending_transitions
+                                .insert(transition_id, self.protocol_version);
                             vec![transition_ready(transition_id)]
                         } else {
                             self.status = DaveStatus::Ready;
@@ -234,13 +262,16 @@ impl DaveState {
                 }
             }
             OP_MLS_WELCOME => {
-                if payload.len() < 2 { return Vec::new(); }
+                if payload.len() < 2 {
+                    return Vec::new();
+                }
                 let transition_id = u16::from_be_bytes([payload[0], payload[1]]);
                 let session = self.session.as_mut().unwrap();
                 match session.process_welcome(&payload[2..]) {
                     Ok(()) => {
                         if transition_id != 0 {
-                            self.pending_transitions.insert(transition_id, self.protocol_version);
+                            self.pending_transitions
+                                .insert(transition_id, self.protocol_version);
                             vec![transition_ready(transition_id)]
                         } else {
                             self.status = DaveStatus::Ready;
@@ -314,7 +345,7 @@ mod tests {
         state.protocol_version = 1;
         state.status = DaveStatus::Ready;
         state.session = None; // We can't easily create a real session in test without davey
-        // Simulate transition from version 1 to 0
+                              // Simulate transition from version 1 to 0
         state.pending_transitions.insert(0, 0);
         let outs = state.execute_transition(0);
         assert!(outs.is_empty());
@@ -334,7 +365,10 @@ mod tests {
     #[test]
     fn prepare_transition_nonzero_marks_transitioning() {
         let mut state = new_state();
-        let outs = state.on_text_op(OP_DAVE_PREPARE_TRANSITION, &json!({"transition_id": 1, "protocol_version": 1}));
+        let outs = state.on_text_op(
+            OP_DAVE_PREPARE_TRANSITION,
+            &json!({"transition_id": 1, "protocol_version": 1}),
+        );
         assert_eq!(outs.len(), 1);
         assert_eq!(state.status(), DaveStatus::Transitioning);
     }
@@ -342,7 +376,10 @@ mod tests {
     #[test]
     fn prepare_transition_zero_version_marks_passthrough() {
         let mut state = new_state();
-        let outs = state.on_text_op(OP_DAVE_PREPARE_TRANSITION, &json!({"transition_id": 2, "protocol_version": 0}));
+        let outs = state.on_text_op(
+            OP_DAVE_PREPARE_TRANSITION,
+            &json!({"transition_id": 2, "protocol_version": 0}),
+        );
         assert_eq!(outs.len(), 1);
         assert_eq!(state.status(), DaveStatus::Passthrough);
     }

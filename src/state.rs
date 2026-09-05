@@ -129,7 +129,9 @@ impl NodeState {
     }
 
     pub fn unhealthy_for(&self) -> Duration {
-        self.unhealthy_since.map(|v| v.elapsed()).unwrap_or_default()
+        self.unhealthy_since
+            .map(|v| v.elapsed())
+            .unwrap_or_default()
     }
 }
 
@@ -168,7 +170,10 @@ impl Registry {
     pub fn new(labels: impl IntoIterator<Item = String>) -> Self {
         Self {
             started: Instant::now(),
-            nodes: labels.into_iter().map(|l| (l.clone(), NodeState::new(l))).collect(),
+            nodes: labels
+                .into_iter()
+                .map(|l| (l.clone(), NodeState::new(l)))
+                .collect(),
             rss_mb: 0.0,
             peak_rss_mb: 0.0,
             restart_requested: false,
@@ -203,11 +208,7 @@ impl Registry {
     }
 }
 
-pub async fn with_node(
-    registry: &SharedRegistry,
-    label: &str,
-    f: impl FnOnce(&mut NodeState),
-) {
+pub async fn with_node(registry: &SharedRegistry, label: &str, f: impl FnOnce(&mut NodeState)) {
     let mut guard = registry.write().await;
     if let Some(node) = guard.nodes.get_mut(label) {
         f(node);

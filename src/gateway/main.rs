@@ -25,7 +25,9 @@ const GATEWAY_STABLE_AFTER: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Clone)]
 pub enum MainEvent {
-    Ready { user_id: String },
+    Ready {
+        user_id: String,
+    },
     VoiceState {
         user_id: String,
         guild_id: String,
@@ -93,7 +95,9 @@ pub async fn run(
     let mut reconnect_backoff = Duration::from_secs(1);
 
     loop {
-        if *shutdown.borrow() { break; }
+        if *shutdown.borrow() {
+            break;
+        }
 
         let url = gateway_url(resume_gateway_url.as_deref());
         let can_resume = session_id.is_some() && seq.is_some();
@@ -113,8 +117,11 @@ pub async fn run(
                     n.gateway_ready = false;
                     n.gateway_heartbeat_ok = false;
                     n.main_error = Some(format!("main_gateway_connect:{e}"));
-                }).await;
-                if wait_or_shutdown(&mut shutdown, reconnect_backoff).await { break; }
+                })
+                .await;
+                if wait_or_shutdown(&mut shutdown, reconnect_backoff).await {
+                    break;
+                }
                 reconnect_backoff = next_reconnect_backoff(reconnect_backoff);
                 continue;
             }
@@ -133,7 +140,8 @@ pub async fn run(
             &mut session_id,
             &mut resume_gateway_url,
             &mut self_user_id,
-        ).await;
+        )
+        .await;
 
         let connection_uptime = connected_at.elapsed();
         if connection_uptime >= GATEWAY_STABLE_AFTER {
@@ -154,7 +162,8 @@ pub async fn run(
                     n.gateway_ready = false;
                     n.gateway_heartbeat_ok = false;
                     n.main_error = Some("main_gateway_invalid_session".into());
-                }).await;
+                })
+                .await;
             }
             Ok(SocketOutcome::Reconnect) => {
                 warn!(node=%label, uptime=?connection_uptime, resume=session_id.is_some() && seq.is_some(), "main gateway disconnected; preserving voice transport");
@@ -163,7 +172,8 @@ pub async fn run(
                     n.gateway_ready = false;
                     n.gateway_heartbeat_ok = false;
                     n.main_error = Some("main_gateway_disconnected".into());
-                }).await;
+                })
+                .await;
             }
             Err(e) => {
                 if matches!(&e, GatewayError::AuthFailed) {
@@ -175,11 +185,14 @@ pub async fn run(
                     n.gateway_ready = false;
                     n.gateway_heartbeat_ok = false;
                     n.main_error = Some(format!("main_gateway:{e}"));
-                }).await;
+                })
+                .await;
             }
         }
 
-        if wait_or_shutdown(&mut shutdown, reconnect_backoff).await { break; }
+        if wait_or_shutdown(&mut shutdown, reconnect_backoff).await {
+            break;
+        }
     }
 
     warn!(node=%label, "main gateway stopped");
@@ -206,7 +219,8 @@ where
 {
     let (mut sink, mut stream) = ws.split();
 
-    let hello = next_json(&mut stream).await
+    let hello = next_json(&mut stream)
+        .await
         .map_err(|e| GatewayError::Protocol(e.to_string()))?;
     let heartbeat_ms = hello
         .pointer("/d/heartbeat_interval")
@@ -223,19 +237,24 @@ where
                 "seq": *seq
             }
         });
-        sink.send(Message::Text(resume.to_string())).await
+        sink.send(Message::Text(resume.to_string()))
+            .await
             .map_err(|e| GatewayError::Network(e.to_string()))?;
         info!(node=%label, seq=?seq, "main gateway RESUME sent");
     } else {
-        sink.send(Message::Text(identify::identify(token, profile).to_string()))
-            .await
-            .map_err(|e| GatewayError::Network(e.to_string()))?;
+        sink.send(Message::Text(
+            identify::identify(token, profile).to_string(),
+        ))
+        .await
+        .map_err(|e| GatewayError::Network(e.to_string()))?;
     }
 
     let mut awaiting_ack = false;
-    let mut heartbeat_sleep = Box::pin(tokio::time::sleep(
-        heartbeat_delay(heartbeat_ms, profile.heartbeat_jitter_percent, profile.jitter_stddev_percent),
-    ));
+    let mut heartbeat_sleep = Box::pin(tokio::time::sleep(heartbeat_delay(
+        heartbeat_ms,
+        profile.heartbeat_jitter_percent,
+        profile.jitter_stddev_percent,
+    )));
 
     loop {
         tokio::select! {
@@ -369,7 +388,9 @@ async fn process_gateway_payload(
     profile: &ClientProfile,
     sink: &mut (impl Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin),
 ) -> Result<GatewayPayloadOutcome, GatewayError> {
-    if let Some(s) = v.get("s").and_then(Value::as_u64) { *seq = Some(s); }
+    if let Some(s) = v.get("s").and_then(Value::as_u64) {
+        *seq = Some(s);
+    }
     let op = v.get("op").and_then(Value::as_u64).unwrap_or(999);
     match op {
         0 => {
@@ -386,7 +407,8 @@ async fn process_gateway_payload(
                     n.gateway_ready = true;
                     n.gateway_heartbeat_ok = true;
                     n.main_error = None; // clear main error on resume
-                }).await;
+                })
+                .await;
                 info!(node=%label, "main gateway resumed");
             }
             handle_dispatch(label, registry, events_tx, v, self_user_id).await;
@@ -398,7 +420,12 @@ async fn process_gateway_payload(
             *awaiting_ack = true;
             with_node(registry, label, |n| n.gateway_heartbeat_ok = false).await;
             heartbeat_sleep.as_mut().reset(
-                Instant::now() + heartbeat_delay(heartbeat_ms, profile.heartbeat_jitter_percent, profile.jitter_stddev_percent),
+                Instant::now()
+                    + heartbeat_delay(
+                        heartbeat_ms,
+                        profile.heartbeat_jitter_percent,
+                        profile.jitter_stddev_percent,
+                    ),
             );
         }
         7 => return Ok(GatewayPayloadOutcome::Reconnect),
@@ -415,7 +442,8 @@ async fn process_gateway_payload(
             with_node(registry, label, |n| {
                 n.gateway_heartbeat_ok = true;
                 n.last_gateway_ack_at = Some(now_epoch());
-            }).await;
+            })
+            .await;
         }
         _ => debug!(node=%label, op, "gateway opcode"),
     }
@@ -431,39 +459,82 @@ async fn handle_dispatch(
 ) {
     match v.get("t").and_then(Value::as_str).unwrap_or("") {
         "READY" => {
-            let user_id = v.pointer("/d/user/id").and_then(Value::as_str).unwrap_or("").to_string();
-            if user_id.is_empty() { return; }
+            let user_id = v
+                .pointer("/d/user/id")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            if user_id.is_empty() {
+                return;
+            }
             *self_user_id = Some(user_id.clone());
             with_node(registry, label, |n| {
                 n.gateway_ready = true;
                 n.gateway_heartbeat_ok = true;
                 n.user_id = Some(user_id.clone());
                 n.main_error = None;
-            }).await;
+            })
+            .await;
             let _ = tx.send(MainEvent::Ready { user_id }).await;
         }
         "VOICE_STATE_UPDATE" => {
-            let event_user_id = v.pointer("/d/user_id").and_then(Value::as_str).unwrap_or("");
-            if self_user_id.as_deref() != Some(event_user_id) { return; }
-            let guild_id = v.pointer("/d/guild_id").and_then(Value::as_str).unwrap_or("").to_string();
-            let channel_id = v.pointer("/d/channel_id").and_then(Value::as_str).map(ToOwned::to_owned);
-            let voice_session_id = v.pointer("/d/session_id").and_then(Value::as_str).unwrap_or("").to_string();
+            let event_user_id = v
+                .pointer("/d/user_id")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            if self_user_id.as_deref() != Some(event_user_id) {
+                return;
+            }
+            let guild_id = v
+                .pointer("/d/guild_id")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let channel_id = v
+                .pointer("/d/channel_id")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned);
+            let voice_session_id = v
+                .pointer("/d/session_id")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
             with_node(registry, label, |n| {
                 n.current_channel_id = channel_id.clone();
                 n.last_voice_state_at = Some(now_epoch());
-            }).await;
-            let _ = tx.send(MainEvent::VoiceState {
-                user_id: event_user_id.to_string(),
-                guild_id,
-                channel_id,
-                session_id: voice_session_id,
-            }).await;
+            })
+            .await;
+            let _ = tx
+                .send(MainEvent::VoiceState {
+                    user_id: event_user_id.to_string(),
+                    guild_id,
+                    channel_id,
+                    session_id: voice_session_id,
+                })
+                .await;
         }
         "VOICE_SERVER_UPDATE" => {
-            let guild_id = v.pointer("/d/guild_id").and_then(Value::as_str).unwrap_or("").to_string();
-            let endpoint = v.pointer("/d/endpoint").and_then(Value::as_str).map(ToOwned::to_owned);
-            let token = v.pointer("/d/token").and_then(Value::as_str).unwrap_or("").to_string();
-            let _ = tx.send(MainEvent::VoiceServer { guild_id, endpoint, token }).await;
+            let guild_id = v
+                .pointer("/d/guild_id")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let endpoint = v
+                .pointer("/d/endpoint")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned);
+            let token = v
+                .pointer("/d/token")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let _ = tx
+                .send(MainEvent::VoiceServer {
+                    guild_id,
+                    endpoint,
+                    token,
+                })
+                .await;
         }
         _ => {}
     }
@@ -478,7 +549,9 @@ where
             Some(Ok(Message::Text(t))) => return Ok(serde_json::from_str(&t)?),
             Some(Ok(Message::Binary(b))) => return Ok(serde_json::from_slice(&b)?),
             Some(Ok(Message::Ping(_))) | Some(Ok(Message::Pong(_))) => continue,
-            Some(Ok(Message::Close(frame))) => anyhow::bail!("gateway closed before HELLO: {frame:?}"),
+            Some(Ok(Message::Close(frame))) => {
+                anyhow::bail!("gateway closed before HELLO: {frame:?}")
+            }
             Some(Ok(_)) => continue,
             Some(Err(e)) => return Err(e.into()),
             None => anyhow::bail!("gateway stream ended before HELLO"),
@@ -488,13 +561,19 @@ where
 
 fn gateway_url(resume_gateway_url: Option<&str>) -> String {
     match resume_gateway_url {
-        Some(base) if !base.trim().is_empty() => format!("{}/?v=10&encoding=json", base.trim_end_matches('/')),
+        Some(base) if !base.trim().is_empty() => {
+            format!("{}/?v=10&encoding=json", base.trim_end_matches('/'))
+        }
         _ => GATEWAY_URL.to_string(),
     }
 }
 
 fn next_reconnect_backoff(current: Duration) -> Duration {
-    Duration::from_secs_f64((current.as_secs_f64() * 1.7).max(1.0).min(GATEWAY_RECONNECT_MAX.as_secs_f64()))
+    Duration::from_secs_f64(
+        (current.as_secs_f64() * 1.7)
+            .max(1.0)
+            .min(GATEWAY_RECONNECT_MAX.as_secs_f64()),
+    )
 }
 
 pub(crate) fn heartbeat_delay(base_ms: u64, percent: u32, stddev_percent: u32) -> Duration {
@@ -507,7 +586,10 @@ pub(crate) fn heartbeat_delay(base_ms: u64, percent: u32, stddev_percent: u32) -
         .unwrap_or_else(|_| Normal::new(mean, 1.0).expect("valid fallback"));
     let mut rng = rand::thread_rng();
     let val = normal.sample(&mut rng);
-    let val = val.clamp(mean - mean * percent as f64 / 100.0, mean + mean * percent as f64 / 100.0);
+    let val = val.clamp(
+        mean - mean * percent as f64 / 100.0,
+        mean + mean * percent as f64 / 100.0,
+    );
     Duration::from_millis(val.max(1.0) as u64)
 }
 

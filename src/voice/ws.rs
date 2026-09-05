@@ -51,7 +51,10 @@ pub struct VoiceOwner {
 
 impl VoiceOwner {
     pub fn new(generation: u64, worker_id: u64) -> Self {
-        Self { generation, worker_id }
+        Self {
+            generation,
+            worker_id,
+        }
     }
 }
 
@@ -109,8 +112,13 @@ impl VoiceConnection {
         let dave_ready = self.dave.is_ready();
         self.update_node(|n| {
             n.dave_ready = dave_ready;
-            n.dave_error = if dave_ready { None } else { Some("dave_not_ready".to_string()) };
-        }).await;
+            n.dave_error = if dave_ready {
+                None
+            } else {
+                Some("dave_not_ready".to_string())
+            };
+        })
+        .await;
     }
 
     pub async fn run_once(&mut self) -> anyhow::Result<VoiceOutcome> {
@@ -150,9 +158,11 @@ impl VoiceConnection {
         }
 
         let mut last_seq = self.resume_ctx.as_ref().map(|v| v.last_seq).unwrap_or(-1);
-        let mut heartbeat_sleep = Box::pin(tokio::time::sleep(
-            heartbeat_delay(heartbeat_ms, self.params.heartbeat_jitter_percent, self.params.jitter_stddev_percent),
-        ));
+        let mut heartbeat_sleep = Box::pin(tokio::time::sleep(heartbeat_delay(
+            heartbeat_ms,
+            self.params.heartbeat_jitter_percent,
+            self.params.jitter_stddev_percent,
+        )));
         let mut missed_acks = 0u32;
 
         loop {
@@ -363,7 +373,9 @@ where
             Some(Ok(Message::Text(t))) => return Ok(serde_json::from_str(&t)?),
             Some(Ok(Message::Binary(b))) => return Ok(serde_json::from_slice(&b)?),
             Some(Ok(Message::Ping(_))) | Some(Ok(Message::Pong(_))) => continue,
-            Some(Ok(Message::Close(frame))) => anyhow::bail!("voice closed before HELLO: {frame:?}"),
+            Some(Ok(Message::Close(frame))) => {
+                anyhow::bail!("voice closed before HELLO: {frame:?}")
+            }
             Some(Ok(_)) => continue,
             Some(Err(e)) => return Err(e.into()),
             None => anyhow::bail!("voice stream ended before HELLO"),
@@ -381,7 +393,10 @@ fn heartbeat_delay(base_ms: u64, percent: u32, stddev_percent: u32) -> Duration 
         .unwrap_or_else(|_| Normal::new(mean, 1.0).expect("valid fallback"));
     let mut rng = rand::thread_rng();
     let val = normal.sample(&mut rng);
-    let val = val.clamp(mean - mean * percent as f64 / 100.0, mean + mean * percent as f64 / 100.0);
+    let val = val.clamp(
+        mean - mean * percent as f64 / 100.0,
+        mean + mean * percent as f64 / 100.0,
+    );
     Duration::from_millis(val.max(1.0) as u64)
 }
 
@@ -475,10 +490,14 @@ mod tests {
             node.voice_heartbeat_ok = true;
         }
         let stale = connection(registry.clone(), label.clone(), 7, 2);
-        assert!(!stale.update_node(|n| {
-            n.voice_connected = false;
-            n.voice_heartbeat_ok = false;
-        }).await);
+        assert!(
+            !stale
+                .update_node(|n| {
+                    n.voice_connected = false;
+                    n.voice_heartbeat_ok = false;
+                })
+                .await
+        );
 
         let guard = registry.read().await;
         let node = &guard.nodes[&label];
@@ -489,8 +508,13 @@ mod tests {
     #[tokio::test]
     async fn stale_worker_cannot_clear_new_worker_error() {
         let (registry, label) = registry_with_owner(7, 3);
-        registry.write().await.nodes.get_mut(&label).expect("test node exists").voice_error =
-            Some("new_worker_error".into());
+        registry
+            .write()
+            .await
+            .nodes
+            .get_mut(&label)
+            .expect("test node exists")
+            .voice_error = Some("new_worker_error".into());
         let stale = connection(registry.clone(), label.clone(), 7, 2);
         assert!(!stale.update_node(|n| n.voice_error = None).await);
         assert_eq!(
@@ -509,10 +533,14 @@ mod tests {
             node.dave_error = None;
         }
         let stale = connection(registry.clone(), label.clone(), 8, 3);
-        assert!(!stale.update_node(|n| {
-            n.dave_ready = false;
-            n.dave_error = Some("stale_dave_error".into());
-        }).await);
+        assert!(
+            !stale
+                .update_node(|n| {
+                    n.dave_ready = false;
+                    n.dave_error = Some("stale_dave_error".into());
+                })
+                .await
+        );
 
         let guard = registry.read().await;
         let node = &guard.nodes[&label];
@@ -530,10 +558,14 @@ mod tests {
             node.last_voice_ack_at = Some(123);
         }
         let stale = connection(registry.clone(), label.clone(), 9, 4);
-        assert!(!stale.update_node(|n| {
-            n.voice_heartbeat_ok = false;
-            n.last_voice_ack_at = Some(999);
-        }).await);
+        assert!(
+            !stale
+                .update_node(|n| {
+                    n.voice_heartbeat_ok = false;
+                    n.last_voice_ack_at = Some(999);
+                })
+                .await
+        );
 
         let guard = registry.read().await;
         let node = &guard.nodes[&label];

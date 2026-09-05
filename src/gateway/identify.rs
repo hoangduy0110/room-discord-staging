@@ -176,7 +176,10 @@ mod tests {
     fn properties_equals_common_properties() {
         let profile = base_profile();
         let payload = identify("token", &profile);
-        assert_eq!(payload["d"]["properties"], payload["d"]["common_client_properties"]);
+        assert_eq!(
+            payload["d"]["properties"],
+            payload["d"]["common_client_properties"]
+        );
     }
 
     #[test]
@@ -184,7 +187,9 @@ mod tests {
         let mut profile = base_profile();
         profile.browser_user_agent = String::new();
         let payload = identify("token", &profile);
-        let ua = payload["d"]["properties"]["browser_user_agent"].as_str().unwrap();
+        let ua = payload["d"]["properties"]["browser_user_agent"]
+            .as_str()
+            .unwrap();
         assert!(ua.contains("X11; Linux x86_64"));
         assert!(ua.contains("Chrome/148.0.7778.280"));
         assert!(ua.contains("Electron/42.9.0"));
@@ -199,7 +204,9 @@ mod tests {
         profile.os_arch = "x86_64".into();
         profile.browser_user_agent = String::new();
         let payload = identify("token", &profile);
-        let ua = payload["d"]["properties"]["browser_user_agent"].as_str().unwrap();
+        let ua = payload["d"]["properties"]["browser_user_agent"]
+            .as_str()
+            .unwrap();
         assert!(ua.contains("Windows NT 10.0.22631"));
         assert!(ua.contains("Win64; x64"));
         assert!(!ua.contains("Linux"));
@@ -213,7 +220,9 @@ mod tests {
         profile.os_arch = "x86_64".into();
         profile.browser_user_agent = String::new();
         let payload = identify("token", &profile);
-        let ua = payload["d"]["properties"]["browser_user_agent"].as_str().unwrap();
+        let ua = payload["d"]["properties"]["browser_user_agent"]
+            .as_str()
+            .unwrap();
         assert!(ua.contains("Macintosh; Intel Mac OS X 14_5"));
         assert!(!ua.contains("Linux"));
     }
@@ -226,7 +235,9 @@ mod tests {
         profile.os_arch = "aarch64".into();
         profile.browser_user_agent = String::new();
         let payload = identify("token", &profile);
-        let ua = payload["d"]["properties"]["browser_user_agent"].as_str().unwrap();
+        let ua = payload["d"]["properties"]["browser_user_agent"]
+            .as_str()
+            .unwrap();
         assert!(ua.contains("Apple Silicon Mac OS X 14_5"));
         assert!(!ua.contains("Intel"));
     }
@@ -235,7 +246,9 @@ mod tests {
     fn explicit_ua_preserved() {
         let profile = base_profile();
         let payload = identify("token", &profile);
-        let ua = payload["d"]["properties"]["browser_user_agent"].as_str().unwrap();
+        let ua = payload["d"]["properties"]["browser_user_agent"]
+            .as_str()
+            .unwrap();
         assert_eq!(ua, profile.browser_user_agent);
     }
 }

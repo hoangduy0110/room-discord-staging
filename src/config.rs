@@ -63,7 +63,10 @@ impl Config {
         }
         let max_accounts = env_u64("MAX_ACCOUNTS", 2)? as usize;
         if tokens.len() > max_accounts {
-            bail!("configured {} accounts but MAX_ACCOUNTS={max_accounts}", tokens.len());
+            bail!(
+                "configured {} accounts but MAX_ACCOUNTS={max_accounts}",
+                tokens.len()
+            );
         }
 
         let guild_id = env_required_id("TARGET_GUILD_ID")?;
@@ -110,8 +113,12 @@ impl Config {
             bail!("JITTER_STDDEV_PERCENT must be between 1 and HEARTBEAT_JITTER_PERCENT");
         }
 
-        let presence_status = env::var("PRESENCE_STATUS").unwrap_or_else(|_| "invisible".to_string());
-        if !matches!(presence_status.as_str(), "online" | "idle" | "dnd" | "invisible") {
+        let presence_status =
+            env::var("PRESENCE_STATUS").unwrap_or_else(|_| "invisible".to_string());
+        if !matches!(
+            presence_status.as_str(),
+            "online" | "idle" | "dnd" | "invisible"
+        ) {
             bail!("PRESENCE_STATUS must be one of: online, idle, dnd, invisible");
         }
 
@@ -133,11 +140,21 @@ impl Config {
         }
 
         let release_channel = env::var("RELEASE_CHANNEL").unwrap_or_else(|_| "stable".to_string());
-        if !matches!(release_channel.as_str(), "stable" | "canary" | "ptb" | "development") {
+        if !matches!(
+            release_channel.as_str(),
+            "stable" | "canary" | "ptb" | "development"
+        ) {
             bail!("RELEASE_CHANNEL must be one of: stable, canary, ptb, development");
         }
 
-        for key in ["CLIENT_VERSION", "BROWSER_VERSION", "CHROME_VERSION", "CLIENT_OS_VERSION", "SYSTEM_LOCALE", "BROWSER"] {
+        for key in [
+            "CLIENT_VERSION",
+            "BROWSER_VERSION",
+            "CHROME_VERSION",
+            "CLIENT_OS_VERSION",
+            "SYSTEM_LOCALE",
+            "BROWSER",
+        ] {
             if let Ok(v) = env::var(key) {
                 if v.trim().is_empty() {
                     bail!("{key} must not be empty");
@@ -148,7 +165,11 @@ impl Config {
         let display_server = match env::var("DISPLAY_SERVER") {
             Ok(v) => v,
             Err(_) => {
-                if os == "Linux" { "wayland".to_string() } else { "unknown".to_string() }
+                if os == "Linux" {
+                    "wayland".to_string()
+                } else {
+                    "unknown".to_string()
+                }
             }
         };
         if !matches!(display_server.as_str(), "wayland" | "x11" | "unknown") {
@@ -167,14 +188,22 @@ impl Config {
         }
 
         let distro = env::var("DISTRO").unwrap_or_else(|_| {
-            if os == "Linux" { "CachyOS".to_string() } else { String::new() }
+            if os == "Linux" {
+                "CachyOS".to_string()
+            } else {
+                String::new()
+            }
         });
         if os != "Linux" && !distro.is_empty() {
             bail!("DISTRO must be empty for non-Linux OS");
         }
 
         let window_manager = env::var("WINDOW_MANAGER").unwrap_or_else(|_| {
-            if os == "Linux" { "niri,unknown".to_string() } else { String::new() }
+            if os == "Linux" {
+                "niri,unknown".to_string()
+            } else {
+                String::new()
+            }
         });
         if os != "Linux" && !window_manager.is_empty() {
             bail!("WINDOW_MANAGER must be empty for non-Linux OS");
@@ -192,18 +221,29 @@ impl Config {
                 bail!("BROWSER_USER_AGENT must contain '{os_token}' for CLIENT_OS={os}");
             }
             let expected_arch_token = if os == "Windows" {
-                if os_arch == "x86_64" { "x64" } else { os_arch.as_str() }
+                if os_arch == "x86_64" {
+                    "x64"
+                } else {
+                    os_arch.as_str()
+                }
             } else if os == "macOS" {
-                if os_arch == "aarch64" { "Apple Silicon" } else { "Intel" }
+                if os_arch == "aarch64" {
+                    "Apple Silicon"
+                } else {
+                    "Intel"
+                }
             } else {
                 os_arch.as_str()
             };
             if !browser_user_agent.contains(expected_arch_token) {
                 bail!("BROWSER_USER_AGENT must contain '{expected_arch_token}' for CLIENT_OS={os}");
             }
-            let client_version = env::var("CLIENT_VERSION").unwrap_or_else(|_| "1.0.156".to_string());
-            let chrome_version = env::var("CHROME_VERSION").unwrap_or_else(|_| "148.0.7778.280".to_string());
-            let electron_version = env::var("BROWSER_VERSION").unwrap_or_else(|_| "42.9.0".to_string());
+            let client_version =
+                env::var("CLIENT_VERSION").unwrap_or_else(|_| "1.0.156".to_string());
+            let chrome_version =
+                env::var("CHROME_VERSION").unwrap_or_else(|_| "148.0.7778.280".to_string());
+            let electron_version =
+                env::var("BROWSER_VERSION").unwrap_or_else(|_| "42.9.0".to_string());
             let discord_token = format!("discord/{}", client_version);
             let chrome_token = format!("Chrome/{}", chrome_version);
             let electron_token = format!("Electron/{}", electron_version);
@@ -221,14 +261,21 @@ impl Config {
         let client_profile = ClientProfile {
             os: os.clone(),
             os_version: env::var("CLIENT_OS_VERSION").unwrap_or_else(|_| {
-                if os == "Linux" { "7.1.8-1-cachyos".to_string() } else if os == "Windows" { "10.0.22631".to_string() } else { "14.5".to_string() }
+                if os == "Linux" {
+                    "7.1.8-1-cachyos".to_string()
+                } else if os == "Windows" {
+                    "10.0.22631".to_string()
+                } else {
+                    "14.5".to_string()
+                }
             }),
             os_arch: os_arch.clone(),
             app_arch: app_arch.clone(),
             system_locale: env::var("SYSTEM_LOCALE").unwrap_or_else(|_| "en-GB".to_string()),
             browser: env::var("BROWSER").unwrap_or_else(|_| "Discord Client".to_string()),
             browser_version: env::var("BROWSER_VERSION").unwrap_or_else(|_| "42.9.0".to_string()),
-            chrome_version: env::var("CHROME_VERSION").unwrap_or_else(|_| "148.0.7778.280".to_string()),
+            chrome_version: env::var("CHROME_VERSION")
+                .unwrap_or_else(|_| "148.0.7778.280".to_string()),
             browser_user_agent,
             client_version: env::var("CLIENT_VERSION").unwrap_or_else(|_| "1.0.156".to_string()),
             client_build_number: env_u64("CLIENT_BUILD_NUMBER", 606747)?,
@@ -248,12 +295,17 @@ impl Config {
             accounts,
             guild_id,
             channel_id,
-            port: env_u64("PORT", 7860)?.try_into().context("PORT must fit u16")?,
+            port: env_u64("PORT", 7860)?
+                .try_into()
+                .context("PORT must fit u16")?,
             self_mute: env_bool("SELF_MUTE", true)?,
             self_deaf: env_bool("SELF_DEAF", true)?,
             startup_grace: Duration::from_secs(env_u64("STARTUP_GRACE_SECONDS", 90)?),
             health_fail_after: Duration::from_secs(env_u64("HEALTH_FAIL_AFTER_SECONDS", 180)?),
-            supervisor_backoff_max: Duration::from_secs(env_u64("SUPERVISOR_BACKOFF_MAX_SECONDS", 90)?),
+            supervisor_backoff_max: Duration::from_secs(env_u64(
+                "SUPERVISOR_BACKOFF_MAX_SECONDS",
+                90,
+            )?),
             memory_warn_mb,
             memory_restart_mb,
             memory_restart_samples,
@@ -292,7 +344,9 @@ fn env_f64(name: &str, default: f64) -> Result<f64> {
 }
 
 fn env_bool(name: &str, default: bool) -> Result<bool> {
-    let Ok(raw) = env::var(name) else { return Ok(default); };
+    let Ok(raw) = env::var(name) else {
+        return Ok(default);
+    };
     match raw.trim().to_ascii_lowercase().as_str() {
         "1" | "true" | "yes" | "on" => Ok(true),
         "0" | "false" | "no" | "off" => Ok(false),
@@ -306,16 +360,40 @@ mod tests {
     use serial_test::serial;
 
     const ENV_KEYS: &[&str] = &[
-        "DISCORD_TOKENS", "TARGET_GUILD_ID", "TARGET_CHANNEL_ID",
-        "CLIENT_OS", "CLIENT_OS_VERSION", "CLIENT_OS_ARCH", "CLIENT_APP_ARCH",
-        "SYSTEM_LOCALE", "BROWSER", "BROWSER_VERSION", "CHROME_VERSION",
-        "BROWSER_USER_AGENT", "CLIENT_VERSION", "CLIENT_BUILD_NUMBER",
-        "NATIVE_BUILD_NUMBER", "RELEASE_CHANNEL", "DISTRO", "WINDOW_MANAGER",
-        "DISPLAY_SERVER", "RUNTIME_ENVIRONMENT", "DEVICE", "PRESENCE_STATUS",
-        "HEARTBEAT_JITTER_PERCENT", "JITTER_STDDEV_PERCENT", "SELF_MUTE", "SELF_DEAF",
-        "PORT", "MAX_ACCOUNTS", "MEMORY_WARN_MB", "MEMORY_RESTART_MB",
-        "MEMORY_RESTART_SAMPLES", "STARTUP_GRACE_SECONDS", "HEALTH_FAIL_AFTER_SECONDS",
-        "SUPERVISOR_BACKOFF_MAX_SECONDS"
+        "DISCORD_TOKENS",
+        "TARGET_GUILD_ID",
+        "TARGET_CHANNEL_ID",
+        "CLIENT_OS",
+        "CLIENT_OS_VERSION",
+        "CLIENT_OS_ARCH",
+        "CLIENT_APP_ARCH",
+        "SYSTEM_LOCALE",
+        "BROWSER",
+        "BROWSER_VERSION",
+        "CHROME_VERSION",
+        "BROWSER_USER_AGENT",
+        "CLIENT_VERSION",
+        "CLIENT_BUILD_NUMBER",
+        "NATIVE_BUILD_NUMBER",
+        "RELEASE_CHANNEL",
+        "DISTRO",
+        "WINDOW_MANAGER",
+        "DISPLAY_SERVER",
+        "RUNTIME_ENVIRONMENT",
+        "DEVICE",
+        "PRESENCE_STATUS",
+        "HEARTBEAT_JITTER_PERCENT",
+        "JITTER_STDDEV_PERCENT",
+        "SELF_MUTE",
+        "SELF_DEAF",
+        "PORT",
+        "MAX_ACCOUNTS",
+        "MEMORY_WARN_MB",
+        "MEMORY_RESTART_MB",
+        "MEMORY_RESTART_SAMPLES",
+        "STARTUP_GRACE_SECONDS",
+        "HEALTH_FAIL_AFTER_SECONDS",
+        "SUPERVISOR_BACKOFF_MAX_SECONDS",
     ];
 
     struct EnvGuard {
@@ -324,7 +402,10 @@ mod tests {
 
     impl EnvGuard {
         fn new() -> Self {
-            let snapshot = ENV_KEYS.iter().map(|k| (k.to_string(), std::env::var(k).ok())).collect();
+            let snapshot = ENV_KEYS
+                .iter()
+                .map(|k| (k.to_string(), std::env::var(k).ok()))
+                .collect();
             Self { snapshot }
         }
     }
@@ -341,7 +422,9 @@ mod tests {
     }
 
     fn clear_all_env() {
-        for k in ENV_KEYS { std::env::remove_var(k); }
+        for k in ENV_KEYS {
+            std::env::remove_var(k);
+        }
     }
 
     fn set_valid_base_env() {
@@ -351,7 +434,9 @@ mod tests {
     }
 
     // Existing tests (restored)
-    #[test] #[serial] fn valid_config_linux_defaults() {
+    #[test]
+    #[serial]
+    fn valid_config_linux_defaults() {
         let guard = EnvGuard::new();
         clear_all_env();
         set_valid_base_env();
@@ -365,7 +450,9 @@ mod tests {
         drop(guard);
     }
 
-    #[test] #[serial] fn windows_defaults() {
+    #[test]
+    #[serial]
+    fn windows_defaults() {
         let guard = EnvGuard::new();
         clear_all_env();
         set_valid_base_env();
@@ -379,7 +466,9 @@ mod tests {
         drop(guard);
     }
 
-    #[test] #[serial] fn non_linux_distro_rejected() {
+    #[test]
+    #[serial]
+    fn non_linux_distro_rejected() {
         let guard = EnvGuard::new();
         clear_all_env();
         set_valid_base_env();
@@ -390,7 +479,9 @@ mod tests {
         drop(guard);
     }
 
-    #[test] #[serial] fn non_linux_wayland_rejected() {
+    #[test]
+    #[serial]
+    fn non_linux_wayland_rejected() {
         let guard = EnvGuard::new();
         clear_all_env();
         set_valid_base_env();
@@ -401,7 +492,9 @@ mod tests {
         drop(guard);
     }
 
-    #[test] #[serial] fn empty_version_rejected() {
+    #[test]
+    #[serial]
+    fn empty_version_rejected() {
         let guard = EnvGuard::new();
         clear_all_env();
         set_valid_base_env();
@@ -411,7 +504,9 @@ mod tests {
         drop(guard);
     }
 
-    #[test] #[serial] fn os_arch_mismatch_rejected() {
+    #[test]
+    #[serial]
+    fn os_arch_mismatch_rejected() {
         let guard = EnvGuard::new();
         clear_all_env();
         set_valid_base_env();
@@ -422,7 +517,9 @@ mod tests {
         drop(guard);
     }
 
-    #[test] #[serial] fn memory_samples_zero_rejected() {
+    #[test]
+    #[serial]
+    fn memory_samples_zero_rejected() {
         let guard = EnvGuard::new();
         clear_all_env();
         set_valid_base_env();
@@ -432,7 +529,9 @@ mod tests {
         drop(guard);
     }
 
-    #[test] #[serial] fn ua_conflict_rejected() {
+    #[test]
+    #[serial]
+    fn ua_conflict_rejected() {
         let guard = EnvGuard::new();
         clear_all_env();
         set_valid_base_env();
@@ -443,19 +542,26 @@ mod tests {
         drop(guard);
     }
 
-    #[test] #[serial] fn ua_arch_mismatch_rejected() {
+    #[test]
+    #[serial]
+    fn ua_arch_mismatch_rejected() {
         let guard = EnvGuard::new();
         clear_all_env();
         set_valid_base_env();
         std::env::set_var("CLIENT_OS", "macOS");
         std::env::set_var("CLIENT_OS_ARCH", "aarch64");
-        std::env::set_var("BROWSER_USER_AGENT", "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5)");
+        std::env::set_var(
+            "BROWSER_USER_AGENT",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5)",
+        );
         let err = Config::from_env().unwrap_err().to_string();
         assert!(err.contains("BROWSER_USER_AGENT"));
         drop(guard);
     }
 
-    #[test] #[serial] fn env_restore_preserves_original_value() {
+    #[test]
+    #[serial]
+    fn env_restore_preserves_original_value() {
         let before = env::var("CLIENT_OS").ok();
         {
             let guard = EnvGuard::new();
@@ -467,7 +573,9 @@ mod tests {
     }
 
     // Additional tests for memory NaN/negative
-    #[test] #[serial] fn memory_nan_rejected() {
+    #[test]
+    #[serial]
+    fn memory_nan_rejected() {
         let guard = EnvGuard::new();
         clear_all_env();
         set_valid_base_env();
@@ -477,7 +585,9 @@ mod tests {
         drop(guard);
     }
 
-    #[test] #[serial] fn memory_negative_rejected() {
+    #[test]
+    #[serial]
+    fn memory_negative_rejected() {
         let guard = EnvGuard::new();
         clear_all_env();
         set_valid_base_env();
@@ -488,7 +598,9 @@ mod tests {
     }
 
     // Restored tests from earlier revisions
-    #[test] #[serial] fn invalid_presence_rejected() {
+    #[test]
+    #[serial]
+    fn invalid_presence_rejected() {
         let guard = EnvGuard::new();
         clear_all_env();
         set_valid_base_env();
@@ -498,7 +610,9 @@ mod tests {
         drop(guard);
     }
 
-    #[test] #[serial] fn invalid_display_server_rejected() {
+    #[test]
+    #[serial]
+    fn invalid_display_server_rejected() {
         let guard = EnvGuard::new();
         clear_all_env();
         set_valid_base_env();
@@ -508,7 +622,9 @@ mod tests {
         drop(guard);
     }
 
-    #[test] #[serial] fn invalid_runtime_environment_rejected() {
+    #[test]
+    #[serial]
+    fn invalid_runtime_environment_rejected() {
         let guard = EnvGuard::new();
         clear_all_env();
         set_valid_base_env();
@@ -518,7 +634,9 @@ mod tests {
         drop(guard);
     }
 
-    #[test] #[serial] fn invalid_jitter_stddev_rejected() {
+    #[test]
+    #[serial]
+    fn invalid_jitter_stddev_rejected() {
         let guard = EnvGuard::new();
         clear_all_env();
         set_valid_base_env();
@@ -529,7 +647,9 @@ mod tests {
         drop(guard);
     }
 
-    #[test] #[serial] fn zero_stddev_rejected() {
+    #[test]
+    #[serial]
+    fn zero_stddev_rejected() {
         let guard = EnvGuard::new();
         clear_all_env();
         set_valid_base_env();
@@ -539,7 +659,9 @@ mod tests {
         drop(guard);
     }
 
-    #[test] #[serial] fn jitter_above_100_rejected() {
+    #[test]
+    #[serial]
+    fn jitter_above_100_rejected() {
         let guard = EnvGuard::new();
         clear_all_env();
         set_valid_base_env();
@@ -549,7 +671,9 @@ mod tests {
         drop(guard);
     }
 
-    #[test] #[serial] fn malformed_guild_id_rejected() {
+    #[test]
+    #[serial]
+    fn malformed_guild_id_rejected() {
         let guard = EnvGuard::new();
         clear_all_env();
         set_valid_base_env();
@@ -559,7 +683,9 @@ mod tests {
         drop(guard);
     }
 
-    #[test] #[serial] fn invalid_boolean_rejected() {
+    #[test]
+    #[serial]
+    fn invalid_boolean_rejected() {
         let guard = EnvGuard::new();
         clear_all_env();
         set_valid_base_env();
@@ -569,7 +695,9 @@ mod tests {
         drop(guard);
     }
 
-    #[test] #[serial] fn memory_restart_less_than_warn_rejected() {
+    #[test]
+    #[serial]
+    fn memory_restart_less_than_warn_rejected() {
         let guard = EnvGuard::new();
         clear_all_env();
         set_valid_base_env();
@@ -580,7 +708,9 @@ mod tests {
         drop(guard);
     }
 
-    #[test] #[serial] fn invalid_os_rejected() {
+    #[test]
+    #[serial]
+    fn invalid_os_rejected() {
         let guard = EnvGuard::new();
         clear_all_env();
         set_valid_base_env();
@@ -590,7 +720,9 @@ mod tests {
         drop(guard);
     }
 
-    #[test] #[serial] fn invalid_os_arch_rejected() {
+    #[test]
+    #[serial]
+    fn invalid_os_arch_rejected() {
         let guard = EnvGuard::new();
         clear_all_env();
         set_valid_base_env();
@@ -600,7 +732,9 @@ mod tests {
         drop(guard);
     }
 
-    #[test] #[serial] fn invalid_release_channel_rejected() {
+    #[test]
+    #[serial]
+    fn invalid_release_channel_rejected() {
         let guard = EnvGuard::new();
         clear_all_env();
         set_valid_base_env();
