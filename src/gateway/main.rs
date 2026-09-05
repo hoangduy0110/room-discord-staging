@@ -278,7 +278,7 @@ where
                 awaiting_ack = true;
                 with_node(registry, label, |n| n.gateway_heartbeat_ok = false).await;
                 heartbeat_sleep.as_mut().reset(
-                    Instant::now() + heartbeat_delay(heartbeat_ms, profile.heartbeat_jitter_percent, profile.jitter_stddev_percent),
+                    (Instant::now() + heartbeat_delay(heartbeat_ms, profile.heartbeat_jitter_percent, profile.jitter_stddev_percent)).into(),
                 );
             }
             req = request_rx.recv() => {
@@ -420,12 +420,13 @@ async fn process_gateway_payload(
             *awaiting_ack = true;
             with_node(registry, label, |n| n.gateway_heartbeat_ok = false).await;
             heartbeat_sleep.as_mut().reset(
-                Instant::now()
+                (Instant::now()
                     + heartbeat_delay(
                         heartbeat_ms,
                         profile.heartbeat_jitter_percent,
                         profile.jitter_stddev_percent,
-                    ),
+                    ))
+                .into(),
             );
         }
         7 => return Ok(GatewayPayloadOutcome::Reconnect),
