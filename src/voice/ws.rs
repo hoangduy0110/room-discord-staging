@@ -134,6 +134,7 @@ impl VoiceConnection {
             .ok_or_else(|| anyhow::anyhow!("voice HELLO missing heartbeat_interval"))?
             as u64;
 
+        let mut resume_started_at = None;
         if let Some(ctx) = &self.resume_ctx {
             let resume = json!({"op": OP_RESUME, "d": {
                 "server_id": self.params.guild_id,
@@ -142,6 +143,7 @@ impl VoiceConnection {
                 "seq_ack": ctx.last_seq
             }});
             sink.send(Message::Text(resume.to_string())).await?;
+            resume_started_at = Some(Instant::now());
             info!(node=%self.label, seq_ack=ctx.last_seq, "voice RESUME sent");
         } else {
             let identify = json!({"op": OP_IDENTIFY, "d": {
@@ -175,7 +177,14 @@ impl VoiceConnection {
                 }
                 _ = &mut heartbeat_sleep => {
                     if missed_acks >= MAX_MISSED_HEARTBEAT_ACKS {
+                        let resume_failed = resume_started_at.is_some();
                         self.update_node(|n| {
+                            n.voice_disconnect_count += 1;
+                            n.last_voice_disconnect_reason =
+                                Some("heartbeat_ack_timeout".into());
+                            if resume_failed {
+                                n.voice_resume_fail_count += 1;
+                            }
                             n.voice_connected = false;
                             n.voice_heartbeat_ok = false;
                             n.voice_error = Some("voice_heartbeat_ack_timeout".into());
@@ -187,7 +196,14 @@ impl VoiceConnection {
                     let nonce: i64 = rand::thread_rng().gen_range(0..(1i64 << 52));
                     let hb = json!({"op": OP_HEARTBEAT, "d": {"t": nonce, "seq_ack": last_seq}});
                     if let Err(e) = sink.send(Message::Text(hb.to_string())).await {
+                        let resume_failed = resume_started_at.is_some();
                         self.update_node(|n| {
+                            n.voice_disconnect_count += 1;
+                            n.last_voice_disconnect_reason =
+                                Some(format!("heartbeat_send_failed:{e}"));
+                            if resume_failed {
+                                n.voice_resume_fail_count += 1;
+                            }
                             n.voice_connected = false;
                             n.voice_heartbeat_ok = false;
                             n.voice_error = Some("voice_heartbeat_send_failed".into());
@@ -205,7 +221,14 @@ impl VoiceConnection {
                     let msg = match msg {
                         Some(Ok(v)) => v,
                         Some(Err(e)) => {
+                            let resume_failed = resume_started_at.is_some();
                             self.update_node(|n| {
+                                n.voice_disconnect_count += 1;
+                                n.last_voice_disconnect_reason =
+                                    Some(format!("stream_error:{e}"));
+                                if resume_failed {
+                                    n.voice_resume_fail_count += 1;
+                                }
                                 n.voice_connected = false;
                                 n.voice_heartbeat_ok = false;
                                 n.voice_error = Some("voice_stream_error".into());
@@ -215,7 +238,13 @@ impl VoiceConnection {
                             return Ok(VoiceOutcome::TryResume);
                         }
                         None => {
+                            let resume_failed = resume_started_at.is_some();
                             self.update_node(|n| {
+                                n.voice_disconnect_count += 1;
+                                n.last_voice_disconnect_reason = Some("stream_ended".into());
+                                if resume_failed {
+                                    n.voice_resume_fail_count += 1;
+                                }
                                 n.voice_connected = false;
                                 n.voice_heartbeat_ok = false;
                                 n.voice_error = Some("voice_stream_ended".into());
@@ -280,15 +309,20 @@ impl VoiceConnection {
                                 OP_RESUMED => {
                                     missed_acks = 0;
                                     let dave_ready = self.dave.is_ready();
+                                    let latency_ms = resume_started_at
+                                        .take()
+                                        .map(|started| started.elapsed().as_millis().min(u64::MAX as u128) as u64);
                                     self.update_node(|n| {
                                         n.voice_connected = true;
                                         n.voice_heartbeat_ok = true;
                                         n.voice_resumes += 1;
+                                        n.voice_resume_count += 1;
+                                        n.last_voice_resume_latency_ms = latency_ms;
                                         n.dave_ready = dave_ready;
                                         n.dave_error = if dave_ready { None } else { Some("dave_not_ready".into()) };
                                         n.voice_error = None;
                                     }).await;
-                                    info!(node=%self.label, "minimal voice resumed");
+                                    info!(node=%self.label, ?latency_ms, "minimal voice resumed");
                                 }
                                 OP_HELLO | OP_CLIENT_DISCONNECT => {}
                                 _ => debug!(node=%self.label, op, "voice opcode"),
@@ -305,7 +339,14 @@ impl VoiceConnection {
                         Message::Close(frame) => {
                             let (code, reason) = frame.map(|f| (u16::from(f.code), f.reason.to_string())).unwrap_or_default();
                             let action = close_codes::classify(code);
+                            let resume_failed = resume_started_at.is_some();
                             self.update_node(|n| {
+                                n.voice_disconnect_count += 1;
+                                n.last_voice_disconnect_reason =
+                                    Some(format!("close:{code}:{reason}"));
+                                if resume_failed {
+                                    n.voice_resume_fail_count += 1;
+                                }
                                 n.voice_connected = false;
                                 n.voice_heartbeat_ok = false;
                                 n.voice_error = Some(format!("voice_close:{code}:{reason}"));

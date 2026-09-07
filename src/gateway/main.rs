@@ -127,6 +127,8 @@ pub async fn run(
             }
         };
 
+        let mut resume_attempted = false;
+        let mut resume_succeeded = false;
         let outcome = run_socket(
             &label,
             &token,
@@ -140,10 +142,18 @@ pub async fn run(
             &mut session_id,
             &mut resume_gateway_url,
             &mut self_user_id,
+            &mut resume_attempted,
+            &mut resume_succeeded,
         )
         .await;
 
         let connection_uptime = connected_at.elapsed();
+        let resume_failed = resume_attempted
+            && !resume_succeeded
+            && !matches!(&outcome, Ok(SocketOutcome::Shutdown));
+        if resume_failed {
+            with_node(&registry, &label, |n| n.main_resume_fail_count += 1).await;
+        }
         if connection_uptime >= GATEWAY_STABLE_AFTER {
             reconnect_backoff = Duration::from_secs(1);
         } else {
@@ -159,6 +169,7 @@ pub async fn run(
                 resume_gateway_url = None;
                 with_node(&registry, &label, |n| {
                     n.gateway_reconnects += 1;
+                    n.main_disconnect_count += 1;
                     n.gateway_ready = false;
                     n.gateway_heartbeat_ok = false;
                     n.main_error = Some("main_gateway_invalid_session".into());
@@ -169,6 +180,7 @@ pub async fn run(
                 warn!(node=%label, uptime=?connection_uptime, resume=session_id.is_some() && seq.is_some(), "main gateway disconnected; preserving voice transport");
                 with_node(&registry, &label, |n| {
                     n.gateway_reconnects += 1;
+                    n.main_disconnect_count += 1;
                     n.gateway_ready = false;
                     n.gateway_heartbeat_ok = false;
                     n.main_error = Some("main_gateway_disconnected".into());
@@ -182,6 +194,9 @@ pub async fn run(
                 warn!(node=%label, uptime=?connection_uptime, error=%e, "main gateway connection error; preserving voice transport");
                 with_node(&registry, &label, |n| {
                     n.gateway_reconnects += 1;
+                    n.main_disconnect_count += 1;
+                    n.last_main_disconnect_reason = Some(e.to_string());
+                    n.last_main_close_code = None;
                     n.gateway_ready = false;
                     n.gateway_heartbeat_ok = false;
                     n.main_error = Some(format!("main_gateway:{e}"));
@@ -213,6 +228,8 @@ async fn run_socket<S>(
     session_id: &mut Option<String>,
     resume_gateway_url: &mut Option<String>,
     self_user_id: &mut Option<String>,
+    resume_attempted: &mut bool,
+    resume_succeeded: &mut bool,
 ) -> Result<SocketOutcome, GatewayError>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
@@ -228,6 +245,7 @@ where
         .ok_or_else(|| GatewayError::Protocol("missing heartbeat interval".to_string()))?;
 
     let can_resume = session_id.is_some() && seq.is_some();
+    let mut resume_started_at = None;
     if can_resume {
         let resume = json!({
             "op": 6,
@@ -240,6 +258,8 @@ where
         sink.send(Message::Text(resume.to_string()))
             .await
             .map_err(|e| GatewayError::Network(e.to_string()))?;
+        *resume_attempted = true;
+        resume_started_at = Some(Instant::now());
         info!(node=%label, seq=?seq, "main gateway RESUME sent");
     } else {
         sink.send(Message::Text(
@@ -298,7 +318,14 @@ where
                         warn!(node=%label, error=%e, "main gateway stream error");
                         return Err(GatewayError::Network(e.to_string()));
                     }
-                    None => return Ok(SocketOutcome::Reconnect),
+                    None => {
+                        with_node(registry, label, |n| {
+                            n.last_main_disconnect_reason = Some("stream_ended".into());
+                            n.last_main_close_code = None;
+                        })
+                        .await;
+                        return Ok(SocketOutcome::Reconnect);
+                    }
                 };
 
                 match msg {
@@ -319,6 +346,8 @@ where
                             heartbeat_ms,
                             profile,
                             &mut sink,
+                            &mut resume_started_at,
+                            resume_succeeded,
                         ).await {
                             Ok(GatewayPayloadOutcome::Continue) => {}
                             Ok(GatewayPayloadOutcome::Reconnect) => return Ok(SocketOutcome::Reconnect),
@@ -343,6 +372,8 @@ where
                             heartbeat_ms,
                             profile,
                             &mut sink,
+                            &mut resume_started_at,
+                            resume_succeeded,
                         ).await {
                             Ok(GatewayPayloadOutcome::Continue) => {}
                             Ok(GatewayPayloadOutcome::Reconnect) => return Ok(SocketOutcome::Reconnect),
@@ -352,6 +383,11 @@ where
                     }
                     Message::Close(frame) => {
                         let (code, reason) = frame.map(|f| (u16::from(f.code), f.reason.to_string())).unwrap_or_default();
+                        with_node(registry, label, |n| {
+                            n.last_main_disconnect_reason = Some(format!("close:{code}:{reason}"));
+                            n.last_main_close_code = Some(code);
+                        })
+                        .await;
                         if code == 4004 {
                             return Err(GatewayError::AuthFailed);
                         }
@@ -387,6 +423,8 @@ async fn process_gateway_payload(
     heartbeat_ms: u64,
     profile: &ClientProfile,
     sink: &mut (impl Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin),
+    resume_started_at: &mut Option<Instant>,
+    resume_succeeded: &mut bool,
 ) -> Result<GatewayPayloadOutcome, GatewayError> {
     if let Some(s) = v.get("s").and_then(Value::as_u64) {
         *seq = Some(s);
@@ -403,13 +441,19 @@ async fn process_gateway_payload(
                     *resume_gateway_url = Some(value.to_string());
                 }
             } else if event_name == "RESUMED" {
+                let latency_ms = resume_started_at
+                    .take()
+                    .map(|started| started.elapsed().as_millis().min(u64::MAX as u128) as u64);
+                *resume_succeeded = true;
                 with_node(registry, label, |n| {
                     n.gateway_ready = true;
                     n.gateway_heartbeat_ok = true;
+                    n.main_resume_count += 1;
+                    n.last_main_resume_latency_ms = latency_ms;
                     n.main_error = None; // clear main error on resume
                 })
                 .await;
-                info!(node=%label, "main gateway resumed");
+                info!(node=%label, ?latency_ms, "main gateway resumed");
             }
             handle_dispatch(label, registry, events_tx, v, self_user_id).await;
         }
@@ -429,9 +473,25 @@ async fn process_gateway_payload(
                 .into(),
             );
         }
-        7 => return Ok(GatewayPayloadOutcome::Reconnect),
+        7 => {
+            with_node(registry, label, |n| {
+                n.last_main_disconnect_reason = Some("server_reconnect_opcode_7".into());
+                n.last_main_close_code = None;
+            })
+            .await;
+            return Ok(GatewayPayloadOutcome::Reconnect);
+        }
         9 => {
             let resumable = v.get("d").and_then(Value::as_bool).unwrap_or(false);
+            with_node(registry, label, |n| {
+                n.last_main_disconnect_reason = Some(if resumable {
+                    "invalid_session_resumable".into()
+                } else {
+                    "invalid_session_nonresumable".into()
+                });
+                n.last_main_close_code = None;
+            })
+            .await;
             return Ok(if resumable {
                 GatewayPayloadOutcome::Reconnect
             } else {
