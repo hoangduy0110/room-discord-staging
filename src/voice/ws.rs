@@ -131,9 +131,9 @@ impl VoiceConnection {
                 if is_resume_attempt {
                     self.update_node(|n| {
                         n.voice_resume_fail_count += 1;
-                        n.last_voice_disconnect_reason =
-                            Some(format!("resume_connect_failed:{e}"));
-                    }).await;
+                        n.last_voice_disconnect_reason = Some(format!("resume_connect_failed:{e}"));
+                    })
+                    .await;
                 }
                 return Err(e.into());
             }
@@ -146,9 +146,9 @@ impl VoiceConnection {
                 if is_resume_attempt {
                     self.update_node(|n| {
                         n.voice_resume_fail_count += 1;
-                        n.last_voice_disconnect_reason =
-                            Some(format!("resume_hello_failed:{e}"));
-                    }).await;
+                        n.last_voice_disconnect_reason = Some(format!("resume_hello_failed:{e}"));
+                    })
+                    .await;
                 }
                 return Err(e);
             }
@@ -170,9 +170,9 @@ impl VoiceConnection {
             if let Err(e) = sink.send(Message::Text(resume.to_string())).await {
                 self.update_node(|n| {
                     n.voice_resume_fail_count += 1;
-                    n.last_voice_disconnect_reason =
-                        Some(format!("resume_send_failed:{e}"));
-                }).await;
+                    n.last_voice_disconnect_reason = Some(format!("resume_send_failed:{e}"));
+                })
+                .await;
                 return Err(e.into());
             }
             resume_started_at = Some(Instant::now());
