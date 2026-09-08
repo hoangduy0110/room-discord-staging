@@ -123,11 +123,36 @@ impl VoiceConnection {
 
     pub async fn run_once(&mut self) -> anyhow::Result<VoiceOutcome> {
         let url = format!("wss://{}/?v=9", self.params.endpoint);
-        info!(node=%self.label, endpoint=%self.params.endpoint, resume=self.resume_ctx.is_some(), "voice gateway connecting");
-        let (ws, _) = connect_async(&url).await?;
+        let is_resume_attempt = self.resume_ctx.is_some();
+        info!(node=%self.label, endpoint=%self.params.endpoint, resume=is_resume_attempt, "voice gateway connecting");
+        let (ws, _) = match connect_async(&url).await {
+            Ok(v) => v,
+            Err(e) => {
+                if is_resume_attempt {
+                    self.update_node(|n| {
+                        n.voice_resume_fail_count += 1;
+                        n.last_voice_disconnect_reason =
+                            Some(format!("resume_connect_failed:{e}"));
+                    }).await;
+                }
+                return Err(e.into());
+            }
+        };
         let (mut sink, mut stream) = ws.split();
 
-        let hello = read_next_json(&mut stream).await?;
+        let hello = match read_next_json(&mut stream).await {
+            Ok(v) => v,
+            Err(e) => {
+                if is_resume_attempt {
+                    self.update_node(|n| {
+                        n.voice_resume_fail_count += 1;
+                        n.last_voice_disconnect_reason =
+                            Some(format!("resume_hello_failed:{e}"));
+                    }).await;
+                }
+                return Err(e);
+            }
+        };
         let heartbeat_ms = hello
             .pointer("/d/heartbeat_interval")
             .and_then(Value::as_f64)
@@ -142,7 +167,14 @@ impl VoiceConnection {
                 "token": self.params.token,
                 "seq_ack": ctx.last_seq
             }});
-            sink.send(Message::Text(resume.to_string())).await?;
+            if let Err(e) = sink.send(Message::Text(resume.to_string())).await {
+                self.update_node(|n| {
+                    n.voice_resume_fail_count += 1;
+                    n.last_voice_disconnect_reason =
+                        Some(format!("resume_send_failed:{e}"));
+                }).await;
+                return Err(e.into());
+            }
             resume_started_at = Some(Instant::now());
             info!(node=%self.label, seq_ack=ctx.last_seq, "voice RESUME sent");
         } else {

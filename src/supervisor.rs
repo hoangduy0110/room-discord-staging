@@ -608,7 +608,9 @@ async fn run_voice_worker(mut voice: VoiceConnection, label: &str) -> VoiceWorke
                     .await;
 
                 quick_failures = quick_failures.saturating_add(1);
-                if quick_failures >= MAX_QUICK_VOICE_FAILURES {
+                let endpoint_unavailable =
+                    is_voice_endpoint_unavailable(&e.to_string()) && quick_failures >= 2;
+                if endpoint_unavailable || quick_failures >= MAX_QUICK_VOICE_FAILURES {
                     return VoiceWorkerExit::NeedFreshSession {
                         reason: format!("voice_transport_refresh:{e}"),
                     };
@@ -678,6 +680,10 @@ fn abort_voice_task(task: &mut Option<JoinHandle<()>>) {
     if let Some(task) = task.take() {
         task.abort();
     }
+}
+
+fn is_voice_endpoint_unavailable(error: &str) -> bool {
+    error.contains("HTTP error: 522")
 }
 
 fn next_join_backoff(current: Duration) -> Duration {
@@ -750,6 +756,16 @@ mod tests {
         assert_eq!(worker_id, 8);
         assert_eq!(registry.read().await.nodes[&label].voice_worker_id, 8);
         assert!(task.is_none());
+    }
+
+    #[test]
+    fn voice_http_522_is_treated_as_endpoint_unavailable() {
+        assert!(is_voice_endpoint_unavailable(
+            "HTTP error: 522 <unknown status code>"
+        ));
+        assert!(!is_voice_endpoint_unavailable(
+            "IO error: peer closed connection without sending TLS close_notify"
+        ));
     }
 
     #[test]

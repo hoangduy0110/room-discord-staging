@@ -67,6 +67,7 @@ pub enum GatewayError {
 enum GatewayPayloadOutcome {
     Continue,
     Reconnect,
+    ServerReconnect,
     InvalidSession,
 }
 
@@ -74,6 +75,7 @@ enum GatewayPayloadOutcome {
 enum SocketOutcome {
     Shutdown,
     Reconnect,
+    ServerReconnect,
     InvalidSession,
 }
 
@@ -154,7 +156,8 @@ pub async fn run(
         if resume_failed {
             with_node(&registry, &label, |n| n.main_resume_fail_count += 1).await;
         }
-        if connection_uptime >= GATEWAY_STABLE_AFTER {
+        let immediate_reconnect = matches!(&outcome, Ok(SocketOutcome::ServerReconnect));
+        if immediate_reconnect || connection_uptime >= GATEWAY_STABLE_AFTER {
             reconnect_backoff = Duration::from_secs(1);
         } else {
             reconnect_backoff = next_reconnect_backoff(reconnect_backoff);
@@ -187,6 +190,17 @@ pub async fn run(
                 })
                 .await;
             }
+            Ok(SocketOutcome::ServerReconnect) => {
+                info!(node=%label, uptime=?connection_uptime, resume=session_id.is_some() && seq.is_some(), "main gateway server-requested reconnect; resuming immediately");
+                with_node(&registry, &label, |n| {
+                    n.gateway_reconnects += 1;
+                    n.main_disconnect_count += 1;
+                    n.gateway_ready = false;
+                    n.gateway_heartbeat_ok = false;
+                    n.main_error = Some("main_gateway_server_reconnect".into());
+                })
+                .await;
+            }
             Err(e) => {
                 if matches!(&e, GatewayError::AuthFailed) {
                     return Err(e.into());
@@ -205,6 +219,9 @@ pub async fn run(
             }
         }
 
+        if immediate_reconnect {
+            continue;
+        }
         if wait_or_shutdown(&mut shutdown, reconnect_backoff).await {
             break;
         }
@@ -351,6 +368,7 @@ where
                         ).await {
                             Ok(GatewayPayloadOutcome::Continue) => {}
                             Ok(GatewayPayloadOutcome::Reconnect) => return Ok(SocketOutcome::Reconnect),
+                            Ok(GatewayPayloadOutcome::ServerReconnect) => return Ok(SocketOutcome::ServerReconnect),
                             Ok(GatewayPayloadOutcome::InvalidSession) => return Ok(SocketOutcome::InvalidSession),
                             Err(e) => return Err(e),
                         }
@@ -377,6 +395,7 @@ where
                         ).await {
                             Ok(GatewayPayloadOutcome::Continue) => {}
                             Ok(GatewayPayloadOutcome::Reconnect) => return Ok(SocketOutcome::Reconnect),
+                            Ok(GatewayPayloadOutcome::ServerReconnect) => return Ok(SocketOutcome::ServerReconnect),
                             Ok(GatewayPayloadOutcome::InvalidSession) => return Ok(SocketOutcome::InvalidSession),
                             Err(e) => return Err(e),
                         }
@@ -396,7 +415,11 @@ where
                             return Ok(SocketOutcome::InvalidSession);
                         }
                         info!(node=%label, code, %reason, "main gateway closed; preserving voice transport");
-                        return Ok(SocketOutcome::Reconnect);
+                        return Ok(if clean_close_allows_immediate_resume(code, can_resume) {
+                            SocketOutcome::ServerReconnect
+                        } else {
+                            SocketOutcome::Reconnect
+                        });
                     }
                     Message::Ping(p) => {
                         sink.send(Message::Pong(p)).await.map_err(|e| GatewayError::Network(e.to_string()))?;
@@ -479,7 +502,7 @@ async fn process_gateway_payload(
                 n.last_main_close_code = None;
             })
             .await;
-            return Ok(GatewayPayloadOutcome::Reconnect);
+            return Ok(GatewayPayloadOutcome::ServerReconnect);
         }
         9 => {
             let resumable = v.get("d").and_then(Value::as_bool).unwrap_or(false);
@@ -493,7 +516,7 @@ async fn process_gateway_payload(
             })
             .await;
             return Ok(if resumable {
-                GatewayPayloadOutcome::Reconnect
+                GatewayPayloadOutcome::ServerReconnect
             } else {
                 GatewayPayloadOutcome::InvalidSession
             });
@@ -629,6 +652,10 @@ fn gateway_url(resume_gateway_url: Option<&str>) -> String {
     }
 }
 
+fn clean_close_allows_immediate_resume(code: u16, can_resume: bool) -> bool {
+    can_resume && code == 1001
+}
+
 fn next_reconnect_backoff(current: Duration) -> Duration {
     Duration::from_secs_f64(
         (current.as_secs_f64() * 1.7)
@@ -664,6 +691,13 @@ async fn wait_or_shutdown(shutdown: &mut watch::Receiver<bool>, duration: Durati
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clean_1001_close_resumes_without_backoff_when_session_is_available() {
+        assert!(clean_close_allows_immediate_resume(1001, true));
+        assert!(!clean_close_allows_immediate_resume(1001, false));
+        assert!(!clean_close_allows_immediate_resume(1000, true));
+    }
 
     #[test]
     fn test_heartbeat_delay_no_double_base() {
