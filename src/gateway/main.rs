@@ -66,7 +66,6 @@ pub enum GatewayError {
 #[derive(Debug, Clone, Copy)]
 enum GatewayPayloadOutcome {
     Continue,
-    Reconnect,
     ServerReconnect,
     InvalidSession,
 }
@@ -367,7 +366,6 @@ where
                             resume_succeeded,
                         ).await {
                             Ok(GatewayPayloadOutcome::Continue) => {}
-                            Ok(GatewayPayloadOutcome::Reconnect) => return Ok(SocketOutcome::Reconnect),
                             Ok(GatewayPayloadOutcome::ServerReconnect) => return Ok(SocketOutcome::ServerReconnect),
                             Ok(GatewayPayloadOutcome::InvalidSession) => return Ok(SocketOutcome::InvalidSession),
                             Err(e) => return Err(e),
@@ -394,7 +392,6 @@ where
                             resume_succeeded,
                         ).await {
                             Ok(GatewayPayloadOutcome::Continue) => {}
-                            Ok(GatewayPayloadOutcome::Reconnect) => return Ok(SocketOutcome::Reconnect),
                             Ok(GatewayPayloadOutcome::ServerReconnect) => return Ok(SocketOutcome::ServerReconnect),
                             Ok(GatewayPayloadOutcome::InvalidSession) => return Ok(SocketOutcome::InvalidSession),
                             Err(e) => return Err(e),
